@@ -4,10 +4,9 @@ import joblib
 import numpy as np
 from sklearn.preprocessing import LabelEncoder
 
-# --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="Robot Predictive Maintenance", page_icon="🤖", layout="wide")
+# --- CONFIGURATION ---
+st.set_page_config(page_title="Multi-Class Maintenance", page_icon="🤖", layout="wide")
 
-# --- CHARGEMENT DES MODÈLES ---
 @st.cache_resource
 def load_models():
     dt = joblib.load("dt_best.pkl")
@@ -17,88 +16,83 @@ def load_models():
 
 try:
     dt_model, rf_model, xgb_model = load_models()
-    
-    # Configuration de l'encodeur pour XGBoost
     le = LabelEncoder()
+    # On s'assure que l'ordre des classes correspond à ton entraînement
     le.classes_ = np.array(['Heat Dissipation Failure', 'No Failure', 'Overstrain Failure', 'Power Failure', 'Tool Wear Failure'])
-    
 except Exception as e:
-    st.error(f"Erreur de chargement des fichiers : {e}")
+    st.error(f"Erreur de chargement des modèles : {e}")
+    st.stop()
 
-# --- INTERFACE UTILISATEUR (TITRE) ---
-st.title("🤖 Robot Predictive Maintenance - Model Tester")
-st.markdown("""
-Cette application compare trois modèles (**Arbre de décision, Random Forest, XGBoost**) pour prédire les types de pannes machines.
-""")
+# --- SCÉNARIOS DE TEST (Sidebar) ---
+st.sidebar.header("🚀 Scénarios de Test Rapide")
 
-# --- BARRE LATÉRALE (INPUTS) ---
-st.sidebar.header("📥 Paramètres des Capteurs")
+# Initialisation des valeurs par défaut dans le session_state
+if 'm_type' not in st.session_state:
+    st.session_state.m_type, st.session_state.m_air, st.session_state.m_proc, \
+    st.session_state.m_speed, st.session_state.m_torque, st.session_state.m_wear = 'L', 301.0, 310.6, 1493, 37.8, 206
 
-# Noms pour DT et RF (avec crochets)
-feature_names_dt_rf = [
-    'Air temperature [K]', 'Process temperature [K]', 
-    'Rotational speed [rpm]', 'Torque [Nm]', 'Tool wear [min]',
-    'Type_L', 'Type_M'
-]
+# BOUTON 1 : CAS NORMAL
+if st.sidebar.button("✅ Charger Cas Normal"):
+    st.session_state.m_type, st.session_state.m_air, st.session_state.m_proc, \
+    st.session_state.m_speed, st.session_state.m_torque, st.session_state.m_wear = 'L', 298.1, 308.6, 1551, 42.8, 0
 
-# Noms pour XGBoost (sans crochets)
-feature_names_xgb = [
-    'Air temperature K', 'Process temperature K', 
-    'Rotational speed rpm', 'Torque Nm', 'Tool wear min', 
-    'Type_L', 'Type_M'
-]
+# BOUTON 2 : TON CAS REEL (Tool Wear Failure)
+if st.sidebar.button("⚠️ Charger Cas Panne"):
+    st.session_state.m_type, st.session_state.m_air, st.session_state.m_proc, \
+    st.session_state.m_speed, st.session_state.m_torque, st.session_state.m_wear = 'L', 301.0, 310.6, 1493, 37.8, 206
 
-# Collecte des entrées
-input_data = {}
-input_data['Air temperature [K]'] = st.sidebar.slider('Température Air [K]', 295.0, 305.0, 298.0)
-input_data['Process temperature [K]'] = st.sidebar.slider('Température Process [K]', 305.0, 315.0, 310.0)
-input_data['Rotational speed [rpm]'] = st.sidebar.number_input('Vitesse de rotation [rpm]', 1300, 2800, 1500)
-input_data['Torque [Nm]'] = st.sidebar.number_input('Couple [Nm]', 0.0, 80.0, 40.0)
-input_data['Tool wear [min]'] = st.sidebar.number_input('Usure outil [min]', 0, 250, 50)
-input_data['Type_L'] = st.sidebar.selectbox('Type L (Low Quality)', [0, 1], index=0)
-input_data['Type_M'] = st.sidebar.selectbox('Type M (Medium Quality)', [0, 1], index=1)
+st.sidebar.divider()
 
-# Préparation des DataFrames
-input_df_dt_rf = pd.DataFrame([input_data])
+# --- SAISIE MANUELLE ---
+st.sidebar.header("📡 Ajustements Manuels")
+m_type = st.sidebar.selectbox("Type", ["L", "M", "H"], index=["L", "M", "H"].index(st.session_state.m_type))
+air = st.sidebar.number_input("Air temperature [K]", value=st.session_state.m_air)
+proc = st.sidebar.number_input("Process temperature [K]", value=st.session_state.m_proc)
+speed = st.sidebar.number_input("Rotational speed [rpm]", value=int(st.session_state.m_speed))
+torque = st.sidebar.number_input("Torque [Nm]", value=st.session_state.m_torque)
+wear = st.sidebar.number_input("Tool wear [min]", value=int(st.session_state.m_wear))
 
-mapping = dict(zip(feature_names_dt_rf, feature_names_xgb))
-input_data_xgb = {mapping[k]: v for k, v in input_data.items()}
-input_df_xgb = pd.DataFrame([input_data_xgb])
+# Encodage manuel du Type pour DT et RF
+type_l = 1 if m_type == "L" else 0
+type_m = 1 if m_type == "M" else 0
+input_data = [air, proc, speed, torque, wear, type_l, type_m]
 
-# --- PRÉDICTIONS ET AFFICHAGE ---
-st.header("📊 Résultats du Diagnostic")
+# Création des DataFrames avec les noms de colonnes spécifiques
+df_dt_rf = pd.DataFrame([input_data], columns=['Air temperature [K]', 'Process temperature [K]', 'Rotational speed [rpm]', 'Torque [Nm]', 'Tool wear [min]', 'Type_L', 'Type_M'])
+df_xgb = pd.DataFrame([input_data], columns=['Air temperature K', 'Process temperature K', 'Rotational speed rpm', 'Torque Nm', 'Tool wear min', 'Type_L', 'Type_M'])
+
+# --- AFFICHAGE ---
+st.title("📊 Multi-Class Maintenance Diagnostic")
+st.markdown("### Analyse comparative des modèles de classification")
 
 col1, col2, col3 = st.columns(3)
 
-def display_diag(name, prediction):
-    is_failure = prediction != "No Failure"
-    if is_failure:
-        st.error(f"### {name}")
-        st.metric(label="STATUS", value="FAILURE", delta="Anomalie Détectée", delta_color="inverse")
-        st.markdown(f"**Type:** `{prediction}`")
-    else:
-        st.success(f"### {name}")
-        st.metric(label="STATUS", value="NORMAL", delta="RAS")
-        st.markdown("**Type:** Aucun")
+def display_multiclass(name, model, df, is_xgb=False):
+    try:
+        # Prédiction
+        pred_val = model.predict(df)[0]
+        # Décodage du label si XGBoost (qui renvoie souvent des entiers)
+        prediction = le.inverse_transform([int(pred_val)])[0] if is_xgb else pred_val
+        
+        # Probabilité (Certitude)
+        proba = np.max(model.predict_proba(df)[0])
+        
+        if prediction != "No Failure":
+            st.error(f"### {name}")
+            st.metric("STATUS", "FAILURE")
+            st.warning(f"**Type :** {prediction}")
+        else:
+            st.success(f"### {name}")
+            st.metric("STATUS", "NORMAL")
+            st.write("**Type :** Aucun")
+        
+        # Barre de progression (Conversion float obligatoire pour Streamlit)
+        st.progress(float(proba), text=f"Certitude : {proba:.1%}")
+        
+    except Exception as e:
+        st.warning(f"Erreur avec {name}: {e}")
 
-with col1:
-    pred_dt = dt_model.predict(input_df_dt_rf)[0]
-    display_diag("Decision Tree", pred_dt)
+with col1: display_multiclass("Decision Tree", dt_model, df_dt_rf)
+with col2: display_multiclass("Random Forest", rf_model, df_dt_rf)
+with col3: display_multiclass("XGBoost", xgb_model, df_xgb, is_xgb=True)
 
-with col2:
-    pred_rf = rf_model.predict(input_df_dt_rf)[0]
-    display_diag("Random Forest", pred_rf)
-
-with col3:
-    pred_xgb_num = xgb_model.predict(input_df_xgb)[0]
-    # Décodage XGBoost
-    if isinstance(pred_xgb_num, (int, np.integer)):
-        pred_xgb = le.inverse_transform([pred_xgb_num])[0]
-    else:
-        pred_xgb = pred_xgb_num
-    display_diag("XGBoost", pred_xgb)
-
-
-# --- TABLE RÉCAPITULATIVE ---
-with st.expander("Voir les données envoyées aux modèles"):
-    st.table(input_df_dt_rf)
